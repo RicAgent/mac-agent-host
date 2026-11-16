@@ -62,12 +62,12 @@ Explain to the friend in four lines, then verify each with a command run as agen
    `/Users/<friend>/Public` is the only folder other users see; leave it or empty it.
 2. System: agents is not an admin, cannot sudo, install system software, change settings, users or sharing. Verify `sudo -u agents sudo -n true` fails.
 3. Shared handoff folder: create `/Users/Shared/work` with the ACL in README.md ("Shared work folder") so both can read/write it.
-4. External SSDs — the important part. macOS mounts external drives with "ignore ownership", so by default EVERY user,
-   agents included, has full read/write on all of them. Inventory: `sudo bash install/drive-access.sh --list`, plus `diskutil list external`.
-   For each volume ask the friend: shared, read-only for agents, or private. Apply with
-   `sudo bash install/drive-access.sh "/Volumes/<Name>" shared|readonly|private` and verify as the script prints.
-   exFAT/FAT/NTFS volumes cannot be restricted: say so, they are shared while mounted. Record the table (volume, filesystem, choice) in SETUP-LOG.md.
-   Tell the friend the rule for the future: a new drive is shared unless he runs the script, and the setting sticks to the drive on this Mac.
+4. External SSDs — keep it simple: DEFAULT IS SHARED. Do not interrogate the friend drive by drive. Ask one question:
+   "Which drives (whole volumes) must the agents never touch?" Apply `sudo bash install/drive-access.sh "/Volumes/<Name>" private`
+   only to those, verify `sudo -u agents ls /Volumes/<Name>` fails, leave every other drive as it is. Inventory first with
+   `sudo bash install/drive-access.sh --list`. Granularity is the whole drive: a drive that mixes "do not touch" and work
+   material is either private or shared, tell him so. exFAT/FAT/NTFS drives cannot be made private: say so (eject = private).
+   Record volume, filesystem, choice in SETUP-LOG.md. Rule for the future: new drive = shared unless he runs the script once.
 5. Note, do not change: agents can see the names of running processes (`ps`), as any user on macOS. It cannot read their windows, files or memory.
 
 ## Phase 4 — Claude Code for the agents user
