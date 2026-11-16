@@ -1,0 +1,222 @@
+#!/usr/bin/env bash
+# agent — manage persistent Claude Code sessions running inside tmux (macOS port).
+# Profiles live in $AGENT_HOME/sessions/<name>.conf (plain shell variables).
+# Works with the system bash 3.2 and with Homebrew bash.
+set -euo pipefail
+
+AGENT_HOME=${AGENT_HOME:-$HOME/agents}
+SESS_DIR=$AGENT_HOME/sessions
+PROMPT_DIR=$AGENT_HOME/prompts
+LOG_DIR=$AGENT_HOME/logs
+mkdir -p "$SESS_DIR" "$PROMPT_DIR" "$LOG_DIR"
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+die() { echo "agent: $*" >&2; exit 1; }
+now() { date "+%Y-%m-%dT%H:%M:%S%z"; }
+log() { printf '%s %s\n' "$(now)" "$*" >> "$LOG_DIR/agent.log"; }
+
+usage() {
+cat <<USAGE
+Usage: agent <command> [args]
+
+  list                      registered sessions and whether they are running
+  status                    machine health + session list
+  start <name>              start a session in tmux (resumes its transcript)
+  stop <name>               stop a session gracefully
+  restart <name>            stop + start
+  attach <name>             attach to the tmux session (Ctrl-b d to detach)
+  logs <name> [lines]       show the last screen lines of a session
+  send <name> "<message>"   type a message into a running session
+  keys <name> <key>...      send raw tmux keys (e.g. agent keys demo Down Enter)
+  new <name> [options]      create a profile (does not start it)
+      --dir <path>          working directory (required)
+      --model <id>          model id (optional)
+      --mode <mode>         permission mode: auto|plan|acceptEdits|default
+      --remote "<label>"    Remote Control label (default: name)
+      --prompt <file>       system prompt file in $PROMPT_DIR
+      --resume <uuid>       adopt an existing transcript id
+      --env <file>          env file (in $AGENT_HOME/secrets or absolute) exported into the session
+      --extra "<args>"      extra claude CLI args, e.g. "--add-dir /path"
+      --no-autostart        do not start at boot
+  edit <name>               open the profile in \$EDITOR
+  rm <name>                 delete the profile (transcripts are kept)
+  boot                      start every profile with AUTOSTART=1 (used by launchd)
+  stop-all                  stop every running registered session
+USAGE
+}
+
+load() {
+  local f=$SESS_DIR/$1.conf
+  [[ -f $f ]] || die "no profile named '$1' (see: agent list)"
+  NAME=$1 DIR= SESSION_ID= MODEL= PERMISSION_MODE= REMOTE_NAME= PROMPT_FILE= EXTRA_ARGS= ENV_FILE= AUTOSTART=1
+  # shellcheck source=/dev/null
+  source "$f"
+  [[ -n $DIR ]] || die "profile '$1' has no DIR"
+}
+
+running() { tmux has-session -t "=$1" 2>/dev/null; }
+
+claude_pid() {
+  local pp
+  pp=$(tmux list-panes -t "=$1" -F '#{pane_pid}' 2>/dev/null | head -1) || return 1
+  [[ -n $pp ]] || return 1
+  if [[ $(basename "$(ps -o comm= -p "$pp" 2>/dev/null)") == claude ]]; then echo "$pp"; return; fi
+  pgrep -P "$pp" -f 'claude' | head -1
+}
+
+persist_session_id() {
+  local f=$SESS_DIR/$NAME.conf
+  if grep -q '^SESSION_ID=' "$f"; then sed -i '' "s|^SESSION_ID=.*|SESSION_ID=$SESSION_ID|" "$f"
+  else echo "SESSION_ID=$SESSION_ID" >> "$f"; fi
+}
+
+build_cmd() {
+  CMD=(claude)
+  if [[ -n $SESSION_ID ]]; then CMD+=(--resume "$SESSION_ID")
+  else SESSION_ID=$(uuidgen | tr 'A-Z' 'a-z'); persist_session_id; CMD+=(--session-id "$SESSION_ID"); fi
+  [[ -n $MODEL ]] && CMD+=(--model "$MODEL")
+  [[ -n $PERMISSION_MODE ]] && CMD+=(--permission-mode "$PERMISSION_MODE")
+  CMD+=(--remote-control "${REMOTE_NAME:-$NAME}")
+  if [[ -n $PROMPT_FILE ]]; then
+    [[ -f $PROMPT_DIR/$PROMPT_FILE ]] || die "prompt file not found: $PROMPT_DIR/$PROMPT_FILE"
+    CMD+=(--append-system-prompt "$(cat "$PROMPT_DIR/$PROMPT_FILE")")
+  fi
+  # shellcheck disable=SC2206
+  if [[ -n $EXTRA_ARGS ]]; then CMD+=($EXTRA_ARGS); fi
+  return 0
+}
+
+cmd_start() {
+  load "$1"
+  running "$NAME" && { echo "$NAME is already running"; return 0; }
+  [[ -d $DIR ]] || die "DIR does not exist: $DIR"
+  build_cmd
+  local quoted; quoted=$(printf '%q ' "${CMD[@]}")
+  # do not leak a parent Claude Code session's environment (or an API key) into the new session
+  local scrub=() v
+  for v in $(compgen -e | grep -E '^(CLAUDE|ANTHROPIC_API_KEY|AI_AGENT)' || true); do scrub+=(-u "$v"); done
+  local scrubq=""
+  [[ ${#scrub[@]} -gt 0 ]] && scrubq=$(printf '%q ' "${scrub[@]}")
+  local pre=""
+  if [[ -n $ENV_FILE ]]; then
+    local ef=$ENV_FILE; [[ $ef == /* ]] || ef=$AGENT_HOME/secrets/$ef
+    [[ -f $ef ]] || die "ENV_FILE not found: $ef"
+    pre="set -a; . $(printf '%q' "$ef"); set +a; "
+  fi
+  tmux new-session -d -s "$NAME" -c "$DIR" -n main "${pre}exec env $scrubq$quoted"
+  log "start $NAME (session $SESSION_ID)"
+  echo "started $NAME  (tmux: $NAME, transcript: $SESSION_ID)"
+  echo "note: a brand-new folder shows Claude Code's 'trust this folder?' prompt — answer with: agent keys $NAME Enter"
+}
+
+cmd_stop() {
+  load "$1"
+  running "$NAME" || { echo "$NAME is not running"; return 0; }
+  local pid; pid=$(claude_pid "$NAME" || true)
+  if [[ -n $pid ]]; then
+    kill -TERM "$pid" 2>/dev/null || true
+    for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+    kill -0 "$pid" 2>/dev/null && { kill -KILL "$pid" 2>/dev/null || true; sleep 1; }
+  fi
+  running "$NAME" && tmux kill-session -t "=$NAME" 2>/dev/null || true
+  log "stop $NAME"
+  echo "stopped $NAME"
+}
+
+cmd_list() {
+  printf '%-14s %-8s %-7s %-7s %-16s %-9s %s\n' NAME STATE PID RSS_MB MODEL AUTOSTART DIR
+  local f
+  for f in "$SESS_DIR"/*.conf; do
+    [[ -e $f ]] || { echo "(no profiles yet — try: agent new <name> --dir <path>)"; return; }
+    load "$(basename "$f" .conf)"
+    local state=stopped pid=- rss=-
+    if running "$NAME"; then
+      state=running; pid=$(claude_pid "$NAME" || echo '?')
+      [[ $pid != '?' && -n $pid ]] && rss=$(( $(ps -o rss= -p "$pid" 2>/dev/null | tr -d ' ' || echo 0) / 1024 ))
+    fi
+    printf '%-14s %-8s %-7s %-7s %-16s %-9s %s\n' "$NAME" "$state" "$pid" "$rss" "${MODEL:-default}" "$AUTOSTART" "$DIR"
+  done
+  echo
+  echo "unregistered tmux sessions:"
+  tmux ls -F '#{session_name}' 2>/dev/null | while read -r s; do [[ -f $SESS_DIR/$s.conf ]] || echo "  $s"; done
+}
+
+cmd_status() {
+  echo "== $(hostname)  $(uptime | sed 's/.*up /up /')"
+  echo "    $(top -l 1 -n 0 2>/dev/null | grep PhysMem || echo 'memory: n/a')"
+  df -h / | awk 'NR==2{printf "    disk /: %s used of %s (%s)\n", $3, $2, $5}'
+  echo "    tailscale: $(tailscale status --self --peers=false 2>/dev/null | head -1 || echo 'not running / not installed')"
+  echo
+  cmd_list
+}
+
+cmd_new() {
+  local name=$1; shift
+  [[ -n $name ]] || die "usage: agent new <name> --dir <path> [...]"
+  [[ $name =~ ^[a-zA-Z0-9_-]+$ ]] || die "name may contain only letters, digits, - and _"
+  local f=$SESS_DIR/$name.conf
+  [[ -e $f ]] && die "profile '$name' already exists (agent edit $name)"
+  local dir= model= mode= remote= prompt= resume= envf= extra= autostart=1
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --dir) dir=$2; shift 2;; --model) model=$2; shift 2;; --mode) mode=$2; shift 2;;
+      --remote) remote=$2; shift 2;; --prompt) prompt=$2; shift 2;; --resume) resume=$2; shift 2;;
+      --env) envf=$2; shift 2;; --extra) extra=$2; shift 2;;
+      --no-autostart) autostart=0; shift;; *) die "unknown option: $1";;
+    esac
+  done
+  [[ -n $dir ]] || die "--dir is required"
+  [[ -d $dir ]] || die "directory does not exist: $dir"
+  cat > "$f" <<CONF
+# agent profile: $name   (created $(date +%F))
+DIR=$dir
+SESSION_ID=$resume
+MODEL=$model
+PERMISSION_MODE=$mode
+REMOTE_NAME="${remote:-$name}"
+PROMPT_FILE=$prompt
+EXTRA_ARGS="$extra"
+ENV_FILE=$envf
+AUTOSTART=$autostart
+CONF
+  echo "created $f"; cat "$f"
+}
+
+cmd_boot() {
+  local f first=1
+  for f in "$SESS_DIR"/*.conf; do
+    [[ -e $f ]] || exit 0
+    load "$(basename "$f" .conf)"
+    [[ $AUTOSTART == 1 ]] || continue
+    running "$NAME" && continue
+    [[ $first == 1 ]] || sleep 3
+    first=0
+    cmd_start "$NAME" || echo "failed to start $NAME" >&2
+  done
+}
+
+cmd_stop_all() {
+  local f
+  for f in "$SESS_DIR"/*.conf; do [[ -e $f ]] || exit 0; cmd_stop "$(basename "$f" .conf)"; done
+}
+
+case ${1:-} in
+  list|ls) cmd_list;;
+  status) cmd_status;;
+  start) cmd_start "${2:?name}";;
+  stop) cmd_stop "${2:?name}";;
+  restart) cmd_stop "${2:?name}"; cmd_start "$2";;
+  attach|a) load "${2:?name}"; running "$NAME" || die "$NAME is not running"; exec tmux attach -t "=$NAME";;
+  logs) load "${2:?name}"; running "$NAME" || die "$NAME is not running"; tmux capture-pane -p -t "$(tmux list-panes -t "=$NAME" -F "#{pane_id}" | head -1)" -S "-${3:-60}";;
+  send) load "${2:?name}"; running "$NAME" || die "$NAME is not running"; [[ -n ${3:-} ]] || die "usage: agent send <name> \"message\"";
+        pane=$(tmux list-panes -t "=$NAME" -F "#{pane_id}" | head -1); tmux send-keys -t "$pane" -l "$3"; sleep 1; tmux send-keys -t "$pane" Enter; echo "sent to $NAME";;
+  keys) load "${2:?name}"; running "$NAME" || die "$NAME is not running"; shift 2; [[ $# -gt 0 ]] || die "usage: agent keys <name> <key>...";
+        pane=$(tmux list-panes -t "=$NAME" -F "#{pane_id}" | head -1); tmux send-keys -t "$pane" "$@"; echo "keys sent to $NAME";;
+  new) shift; cmd_new "$@";;
+  edit) load "${2:?name}"; exec "${EDITOR:-nano}" "$SESS_DIR/$NAME.conf";;
+  rm) load "${2:?name}"; running "$NAME" && die "stop it first"; rm -v "$SESS_DIR/$NAME.conf";;
+  boot) cmd_boot;;
+  stop-all) cmd_stop_all;;
+  -h|--help|help|'') usage;;
+  *) die "unknown command '$1' (agent help)";;
+esac
