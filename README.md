@@ -18,7 +18,10 @@ claude.ai/code (phone/Air) ──Remote Control──▶ each Claude Code sessio
 - Sessions: `~/.local/bin/agent` (this kit) + tmux, started at boot by a LaunchDaemon (no GUI login needed).
 - Billing: every session runs on the Claude account logged in from the `agents` user. Pick it deliberately.
 
-## The 3-hour runbook
+## Hands-off mode (preferred)
+Install Claude Code in the friend's admin account and let it run the setup: see `START.md` (5 manual minutes) and `SETUP-AGENT.md` (the instructions the session follows, with the human steps it will ask for). The manual runbook below stays as the fallback.
+
+## The 3-hour runbook (manual fallback)
 
 ### 0:00 – 0:20 Physical + macOS settings (friend's admin account)
 1. Place the Mac Studio, Ethernet in, HDMI dummy plug (or a monitor) in, power on.
