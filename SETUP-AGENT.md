@@ -55,6 +55,21 @@ finish with a written report. Converse in English; the operator may write Italia
 2. Verify: `id agents`, `dscl . -read /Groups/com.apple.access_ssh GroupMembership`, `ls -la /Users/agents/agents-kit`,
    `sudo launchctl print system/com.along.agents | head -5`, `brew list | tr '\n' ' '` (tmux jq gh node git present).
 
+## Phase 3b — separation: what the agents user can and cannot reach
+Explain to the friend in four lines, then verify each with a command run as agents (`sudo -u agents ...`):
+1. His account, open apps, Keychain, iCloud, browser logins, Documents/Desktop/Downloads: not reachable.
+   Verify `sudo -u agents ls /Users/<friend>/Documents` fails. Tighten the home top level too: `sudo chmod 700 /Users/<friend>`.
+   `/Users/<friend>/Public` is the only folder other users see; leave it or empty it.
+2. System: agents is not an admin, cannot sudo, install system software, change settings, users or sharing. Verify `sudo -u agents sudo -n true` fails.
+3. Shared handoff folder: create `/Users/Shared/work` with the ACL in README.md ("Shared work folder") so both can read/write it.
+4. External SSDs — the important part. macOS mounts external drives with "ignore ownership", so by default EVERY user,
+   agents included, has full read/write on all of them. Inventory: `sudo bash install/drive-access.sh --list`, plus `diskutil list external`.
+   For each volume ask the friend: shared, read-only for agents, or private. Apply with
+   `sudo bash install/drive-access.sh "/Volumes/<Name>" shared|readonly|private` and verify as the script prints.
+   exFAT/FAT/NTFS volumes cannot be restricted: say so, they are shared while mounted. Record the table (volume, filesystem, choice) in SETUP-LOG.md.
+   Tell the friend the rule for the future: a new drive is shared unless he runs the script, and the setting sticks to the drive on this Mac.
+5. Note, do not change: agents can see the names of running processes (`ps`), as any user on macOS. It cannot read their windows, files or memory.
+
 ## Phase 4 — Claude Code for the agents user
 1. `sudo -iu agents bash /Users/agents/agents-kit/install/2-agents-setup.sh`. Verify: `sudo -iu agents bash -lc 'claude --version; agent help | head -3'`.
 2. Login must be interactive, so drive it through tmux as the agents user:

@@ -77,6 +77,20 @@ Agents get projects there with `agent new <name> --dir /Users/Shared/work/<name>
 2. From the Air over hotspot: Screen Sharing works at the login window (FileVault off) → `ssh agents@mac-studio` → `agent status` shows `demo` running (started by launchd) → the session is back in Remote Control.
 3. Leave `README.md` on the Desktop with the four commands: `agent status`, `agent start/stop <name>`, `agent send <name> "..."`, `agent logs <name>`.
 
+## Separation model (what the friend keeps, what the agents get)
+
+| Area | agents user | How |
+|---|---|---|
+| His account, open apps, Keychain, iCloud, browser sessions, Documents/Desktop/Downloads | no access | separate macOS user, home 700 |
+| System settings, users, sharing, installs | no | standard (non-admin) user, no sudo |
+| CPU, GPU, RAM, network, command-line tools from Homebrew | yes | tools installed by the admin, used by anyone |
+| `/Users/Shared/work` | read/write | ACL (see below) |
+| External SSDs | **his choice per drive** | `sudo bash install/drive-access.sh /Volumes/<Name> shared\|readonly\|private`; `--list` shows the current state |
+| Screen Sharing / GUI | no | allowed only for his user; can be opened later for computer-use tasks |
+
+External drives are the trap: macOS mounts them with "ignore ownership", so every user has full access until the script
+enforces ownership and adds a deny ACL for `agents`. exFAT/FAT/NTFS drives have no permissions and stay shared while mounted.
+
 ## Day-to-day
 - Friend: works on the Studio through Screen Sharing from the Air, anywhere. Nothing to do for the agents.
 - Owner / friend from the phone: claude.ai/code → Remote Control → the session; or `ssh agents@mac-studio` over Tailscale.
