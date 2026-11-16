@@ -2,7 +2,7 @@
 
 Goal: the Mac Studio stays at home, always on, reachable from the MacBook Air (full screen, fluid) and
 from claude.ai/code (Remote Control) where persistent Claude Code sessions run under a separate,
-non-admin user called `agents`. Same model as the Hostinger server: `agent start/send/logs`, tmux, auto-boot.
+non-admin user called `agents`. Same model as a Linux agent server: `agent start/send/logs`, tmux, auto-boot.
 
 ## Architecture
 
