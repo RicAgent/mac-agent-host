@@ -97,6 +97,9 @@ enforces ownership and adds a deny ACL for `agents`. exFAT/FAT/NTFS drives have 
 - New project: `mkdir ~/projects/<name>`, `agent new <name> --dir ~/projects/<name> --prompt mac-agent.md --remote "<label>"`, `agent start <name>`, `agent keys <name> Enter`.
 - Giving the owner access from his own machines: in the Tailscale admin console, Machines > mac-studio > Share… (node sharing, free) or add the owner's device to the same tailnet.
 
+## Credentials and app access
+See `CREDENTIALS.md`: scoped tokens in `~/agents/secrets/*.env` owned by the agents user, loaded with `--env`; password manager as source of truth; OAuth MCP logins done once through a virtual Screen Sharing login as `agents`.
+
 ## Known limits
 - The kit's scripts were written on Linux and not executed on a Mac before the visit: run them line by line if one step fails, every step is a plain shell command.
 - A session shows Claude Code's "trust this folder" prompt the first time a folder is used; `agent keys <name> Enter` answers it.
