@@ -14,13 +14,13 @@ exec zsh
 git clone https://github.com/RicAgent/mac-agent-host.git ~/mac-agent-host || echo "no access: unpack mac-agent-host.tgz into ~/mac-agent-host instead"
 cd ~/mac-agent-host
 
-# 4. start the setup session (log in with YOUR Claude account when asked, you log out at the end)
+# 4. start the setup session (log in with the FRIEND's Claude account when asked: it pays everything on this Mac)
 claude --permission-mode auto
 ```
 
 First message to type:
 
-> Read SETUP-AGENT.md and perform the whole setup described there, phase by phase. I am sitting next to the Mac with its owner. Whenever you need a human, write "HUMAN STEP n:" with the exact action and wait for "done". Start with Phase 0 and report what you found before changing anything.
+> Read README.md, CHECKLIST.md and SETUP-AGENT.md in this folder, then perform the whole setup in SETUP-AGENT.md phase by phase, within 3 hours. I am sitting next to the Mac with its owner; speak Italian with us. Whenever you need a human, write "HUMAN STEP n:" with the exact action and wait for "done". Verify every step with a command. Start with Phase 0 and report what you found before changing anything.
 
 After the reboot in Phase 6, open Terminal again, `cd ~/mac-agent-host && claude --continue` (or `claude` and "Read SETUP-AGENT.md and SETUP-LOG.md, we are at Phase 7") to finish the cleanup.
 

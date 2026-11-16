@@ -3,7 +3,12 @@
 You are running on a Mac Studio, inside the admin account of its owner (the "friend"). Next to you sits a
 second person (the "operator") who installed you and will do the few manual steps. Your job: turn this Mac
 into an always-on remote workstation plus a Claude Code agent host, following this file to the end, and
-finish with a written report. Converse in English; the operator may write Italian, answer in English unless asked.
+finish with a written report. Speak Italian in chat with the people on site; write files and logs in English.
+Time budget: 3 hours total. Phase 0-1: 20 min, Phase 2: 20 min, Phase 3-3b: 40 min, Phase 4-5: 40 min,
+Phase 5b (Air): 20 min, Phase 6-7: 30 min. Say the time used at the end of each phase; if a step eats more than
+10 minutes, stop, say so, and propose to skip or do it by hand.
+Accounts: everything on this Mac (your own login and the agents user's login) uses the FRIEND's Claude account,
+the one that pays his subscription. Never use the operator's account.
 
 ## Ground rules
 - Do every step yourself with shell commands. Ask the operator only for a HUMAN STEP (listed below) and only
@@ -76,8 +81,8 @@ Explain to the friend in four lines, then verify each with a command run as agen
    `sudo -iu agents bash -lc 'tmux new-session -d -s login "claude"'`, wait 5 s, then
    `sudo -iu agents bash -lc 'tmux capture-pane -p -t login'` and look for the login menu; send `Enter` for the subscription option
    (`tmux send-keys -t login Enter`), capture again, find the URL.
-   HUMAN STEP 6: open the printed URL in Safari, log in with the Claude account that will PAY for the agents (decided by the operator),
-   copy the code shown, paste it to me here in chat. Then you send it with `tmux send-keys -t login -l "<code>"` and `Enter`.
+   HUMAN STEP 6: the friend opens the printed URL in Safari, logs in with HIS Claude account (the one that pays his subscription),
+   copies the code shown, pastes it to me here in chat. Then you send it with `tmux send-keys -t login -l "<code>"` and `Enter`.
    Verify login: capture the pane until the prompt appears, then send `/exit` + Enter and `tmux kill-session -t login`.
    If this dance fails twice: HUMAN STEP 6b: operator opens a second Terminal, runs `sudo -iu agents` then `claude`, logs in by hand, `/exit`.
 3. Optional GitHub for the agents user: ask the operator whether agents will push code. If yes: same tmux trick with
@@ -91,6 +96,14 @@ As the agents user (`sudo -iu agents bash -lc '...'`):
 4. `agent send demo "Hello. Which machine and user are you running as? Create PROJECT_STATE.md with that info."`; after 30 s `agent logs demo`.
 5. Tell the operator: HUMAN STEP 7: open claude.ai/code on your phone, confirm "Mac Studio - demo" is listed under Remote Control and send it a message there.
 
+## Phase 5b — MacBook Air (manual, you guide it step by step from here)
+Give the operator these steps one at a time as HUMAN STEPS, and ask for the result of each:
+1. On the Air: install Tailscale (tailscale.com/download), sign in with the SAME account as the Studio. Verify: Tailscale menu lists mac-studio.
+2. Finder > Go > Connect to Server > `vnc://mac-studio` > log in as the friend. In the window: View > High Performance. He works 5 minutes in his real app.
+3. Air on the phone hotspot (Wi-Fi to the hotspot), reconnect the same way. Ask: fluid enough? If no: note "Jump Desktop" as the fallback to try later.
+4. Terminal on the Air: `ssh agents@mac-studio` (password of the agents user) then `agent status`. Verify the demo session is listed running.
+5. Optional: `ssh-copy-id agents@mac-studio` from the Air so future logins need no password.
+
 ## Phase 6 — reboot test
 1. Save `SETUP-LOG.md`. Tell the operator exactly what will happen: the Mac reboots, you (this session) will die,
    and they must check from the MacBook Air on the phone hotspot: (a) Screen Sharing to mac-studio reaches the login window,
@@ -99,11 +112,16 @@ As the agents user (`sudo -iu agents bash -lc '...'`):
 
 ## Phase 7 — cleanup (after the reboot, when the operator restarts you with `claude --resume` or a new session reading this file)
 1. `sudo rm -f /etc/sudoers.d/claude-setup`; verify `sudo -n true` now FAILS.
-2. If the operator logged in to Claude Code in the friend's admin account with the operator's own account, run `claude` → `/logout` there,
-   or tell the operator to do it. Ask which it is.
+2. The admin account's Claude Code stays logged in with the friend's account: nothing to log out. Tell the friend he can open
+   `claude` in Terminal in his own account any time, it is the same subscription.
 3. Write `~/Desktop/AGENTS-HOWTO.txt` for the friend: how to reach the Mac from the Air (vnc://mac-studio, High Performance),
    `ssh agents@mac-studio`, the four agent commands, how to create a new project session, where the logs are, who to call.
 4. Print the MacBook Air checklist for the operator (Air is not touched by you): install Tailscale, same account; Finder > Go >
    Connect to Server `vnc://mac-studio`, View > High Performance; test on phone hotspot; Jump Desktop if laggy; `ssh agents@mac-studio`.
-5. Final report in chat: what is set up, Tailscale name/IP, the agents user, which Claude account pays, FileVault state,
-   anything left open. Copy the same into SETUP-LOG.md.
+5. Final report in chat (Italian): what is set up, Tailscale name/IP, the agents user and its password location, FileVault state,
+   the drives marked private, anything left open. Copy the same into SETUP-LOG.md (English).
+
+## If time runs out
+Minimum viable result, in this order: Phase 1 (settings) + Phase 2 (Tailscale) + Air screen sharing test. The agents user
+(Phases 3-5) can be finished remotely later by the operator over SSH: leave `/etc/sudoers.d/claude-setup` removed anyway and
+write in SETUP-LOG.md exactly where you stopped.
